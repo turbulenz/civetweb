@@ -575,8 +575,28 @@ CIVETWEB_API int mg_write(struct mg_connection *, const void *buf, size_t len);
     >0  number of bytes written on success */
 CIVETWEB_API int mg_websocket_write(struct mg_connection *conn,
                                     int opcode,
-                                    const char *data,
+                                    char *data,
                                     size_t data_len);
+
+/* Send data to a websocket client wrapped in a websocket frame.  Uses
+   mg_lock_connection to ensure that the transmission is not interrupted,
+   i.e., when the application is proactively communicating and responding to
+   a request simultaneously.
+   The data ptr should point at a buffer with CIVETWEB_WEBSOCKET_HEADER_PREFIX_SIZE
+   of additional space before the clients requested data to send
+
+   Send data to a websocket client wrapped in a websocket frame.
+   This function is available when civetweb is compiled with -DUSE_WEBSOCKET
+
+   Return:
+    0   when the connection has been closed
+    -1  on error
+    >0  number of bytes written on success */
+#define CIVETWEB_WEBSOCKET_HEADER_PREFIX_SIZE 16
+CIVETWEB_API int mg_websocket_write_prefixed_header(struct mg_connection *conn,
+                                                    int opcode,
+                                                    char *data,
+                                                    size_t data_len);
 
 
 /* Send data to a websocket server wrapped in a masked websocket frame.  Uses

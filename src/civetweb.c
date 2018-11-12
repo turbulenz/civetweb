@@ -9589,9 +9589,10 @@ read_websocket(struct mg_connection *conn,
 static int
 mg_websocket_write_exec(struct mg_connection *conn,
                         int opcode,
-                        const char *data,
+                        char *data,
                         size_t dataLen,
-                        uint32_t masking_key)
+                        uint32_t masking_key,
+                        int prefixed_header)
 {
 	unsigned char header[14];
 	size_t headerLen = 1;
@@ -9638,6 +9639,12 @@ mg_websocket_write_exec(struct mg_connection *conn,
 		headerLen += 4;
 	}
 
+	char *headerStart = 0;
+	if (prefixed_header)
+	{
+		headerStart = data + CIVETWEB_WEBSOCKET_HEADER_PREFIX_SIZE - headerLen;
+		memcpy(headerStart, header, headerLen);
+	}
 
 	/* Note that POSIX/Winsock's send() is threadsafe
 	 * http://stackoverflow.com/questions/1981372/are-parallel-calls-to-send-recv-on-the-same-socket-valid
@@ -9645,9 +9652,20 @@ mg_websocket_write_exec(struct mg_connection *conn,
 	 * push(), although that is only a problem if the packet is large or
 	 * outgoing buffer is full). */
 	(void)mg_lock_connection(conn);
-	retval = mg_write(conn, header, headerLen);
-	if (dataLen > 0) {
-		retval = mg_write(conn, data, dataLen);
+	if (prefixed_header)
+	{
+		retval = mg_write(conn, headerStart, headerLen + dataLen);
+		if (retval > 0)
+		{
+			retval = retval - (int)headerLen;
+		}
+	}
+	else
+	{
+		retval = mg_write(conn, header, headerLen);
+		if (dataLen > 0) {
+			retval = mg_write(conn, data, dataLen);
+		}
 	}
 	mg_unlock_connection(conn);
 
@@ -9657,12 +9675,20 @@ mg_websocket_write_exec(struct mg_connection *conn,
 int
 mg_websocket_write(struct mg_connection *conn,
                    int opcode,
-                   const char *data,
+                   char *data,
                    size_t dataLen)
 {
-	return mg_websocket_write_exec(conn, opcode, data, dataLen, 0);
+	return mg_websocket_write_exec(conn, opcode, data, dataLen, 0, 0);
 }
 
+int
+mg_websocket_write_prefixed_header(struct mg_connection *conn,
+                                   int opcode,
+                                   char *data,
+                                   size_t dataLen)
+{
+	return mg_websocket_write_exec(conn, opcode, data, dataLen, 0, 1);
+}
 
 static void
 mask_data(const char *in, size_t in_len, uint32_t masking_key, char *out)
@@ -9711,7 +9737,7 @@ mg_websocket_client_write(struct mg_connection *conn,
 	mask_data(data, dataLen, masking_key, masked_data);
 
 	retval = mg_websocket_write_exec(
-	    conn, opcode, masked_data, dataLen, masking_key);
+	    conn, opcode, masked_data, dataLen, masking_key, 0);
 	mg_free(masked_data);
 
 	return retval;
